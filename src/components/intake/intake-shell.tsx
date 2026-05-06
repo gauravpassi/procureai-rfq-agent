@@ -12,7 +12,7 @@
  */
 
 import { useState, useRef, useCallback } from "react";
-import type { Signal, PipelineStep, SignalSource } from "@/types/intake";
+import type { Signal, PipelineStep, SignalSource, POData } from "@/types/intake";
 import { ConnectorStrip } from "./connector-strip";
 import { SignalCard } from "./signal-card";
 import { PipelineView } from "./pipeline-view";
@@ -769,6 +769,30 @@ export function IntakeShell() {
     setTimeout(() => advanceToStep(newId, 0), 600);
   }, [advanceToStep]);
 
+  // ── Send PO email ──────────────────────────────────────────────────────────
+
+  const handleSendPO = useCallback(
+    async (stepId: string, poData: POData, rfqId: string, subject: string) => {
+      const res = await fetch("/api/intake/send-po", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          poData,
+          rfqId: poData.poNumber,
+          itemDescription: poData.lineItems[0]?.description ?? subject,
+          signalSubject: subject,
+          approverName: "Gaurav Passi",
+          approverEmail: "er.gauravpassi@gmail.com",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to send email");
+      }
+    },
+    [],
+  );
+
   // ── Human gate action ──────────────────────────────────────────────────────
 
   const handleStepAction = useCallback(
@@ -863,6 +887,7 @@ export function IntakeShell() {
             onAction={handleStepAction}
             onRunDemo={runDemo}
             demoRunning={demoSignalId === selectedId}
+            onSendPO={handleSendPO}
           />
         </div>
       </div>

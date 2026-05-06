@@ -29,9 +29,11 @@ interface Props {
   onAction: (stepId: string, which: "primary" | "alt1" | "alt2") => void;
   onRunDemo: () => void;
   demoRunning: boolean;
+  /** Called when buyer clicks "Send PO to Vendor" on a gate that has poData */
+  onSendPO?: (stepId: string, poData: POData, rfqId: string, subject: string) => Promise<void>;
 }
 
-export function PipelineView({ signal, steps, onAction, onRunDemo, demoRunning }: Props) {
+export function PipelineView({ signal, steps, onAction, onRunDemo, demoRunning, onSendPO }: Props) {
   const hasHumanGate = steps.some((s) => s.status === "awaiting-human");
   const allDone = steps.every((s) => s.status === "done" || s.status === "human-done");
 
@@ -81,6 +83,7 @@ export function PipelineView({ signal, steps, onAction, onRunDemo, demoRunning }
               step={step}
               isLast={idx === steps.length - 1}
               onAction={(which) => onAction(step.id, which)}
+              onSendPO={onSendPO ? (poData) => onSendPO(step.id, poData, signal.id, signal.subject) : undefined}
             />
           ))}
         </div>
@@ -95,10 +98,12 @@ function StepRow({
   step,
   isLast,
   onAction,
+  onSendPO,
 }: {
   step: PipelineStep;
   isLast: boolean;
   onAction: (which: "primary" | "alt1" | "alt2") => void;
+  onSendPO?: (poData: POData) => void;
 }) {
   const isLocked = step.status === "locked";
   const isDone = step.status === "done" || step.status === "human-done";
@@ -219,7 +224,7 @@ function StepRow({
 
         {/* Human gate: expanded action card */}
         {isHumanGate && (
-          <HumanGateCard step={step} onAction={onAction} />
+          <HumanGateCard step={step} onAction={onAction} onSendPO={onSendPO} />
         )}
       </div>
     </div>
@@ -231,11 +236,14 @@ function StepRow({
 function HumanGateCard({
   step,
   onAction,
+  onSendPO,
 }: {
   step: PipelineStep;
   onAction: (which: "primary" | "alt1" | "alt2") => void;
+  onSendPO?: (poData: POData) => void;
 }) {
   const [showBidTable, setShowBidTable] = useState(false);
+  const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const hasPO = !!step.poData;
   const hasBidTable = !!step.bidTable?.length;
   const hasRfqFields = !!step.rfqFields?.length;
@@ -352,9 +360,38 @@ function HumanGateCard({
       {/* Action buttons */}
       <div style={{ padding: "12px 14px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {step.humanCTA && (
-          <Btn kind="dark" size="md" onClick={() => onAction("primary")}>
-            {step.humanCTA}
-          </Btn>
+          hasPO && onSendPO && step.poData ? (
+            // PO gate — "Send PO to Vendor" button with email-send logic
+            sendState === "sent" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--success)", fontWeight: 500 }}>
+                <Icon name="check" size={13} color="var(--success)" />
+                Email sent to er.gauravpassi@gmail.com
+              </div>
+            ) : (
+              <Btn
+                kind="dark"
+                size="md"
+                disabled={sendState === "sending"}
+                onClick={async () => {
+                  setSendState("sending");
+                  try {
+                    await onSendPO(step.poData!);
+                    setSendState("sent");
+                    // Advance pipeline after short delay
+                    setTimeout(() => onAction("primary"), 800);
+                  } catch {
+                    setSendState("error");
+                  }
+                }}
+              >
+                {sendState === "sending" ? "Sending…" : sendState === "error" ? "Retry" : step.humanCTA}
+              </Btn>
+            )
+          ) : (
+            <Btn kind="dark" size="md" onClick={() => onAction("primary")}>
+              {step.humanCTA}
+            </Btn>
+          )
         )}
         {step.humanAltCTAs?.[0] && (
           <Btn

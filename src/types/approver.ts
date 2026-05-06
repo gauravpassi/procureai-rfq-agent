@@ -3,7 +3,7 @@
  * Every field here maps 1:1 to the handoff spec.
  */
 
-export type Stage = "email" | "reason" | "auth" | "result";
+export type Stage = "email" | "reason" | "result";
 export type Action = "approve" | "sendback" | "reject";
 export type AuthMethod = "passkey" | "otp";
 export type AuthState = "idle" | "verifying" | "done";
@@ -47,12 +47,11 @@ export type ApproverAction =
 export function approverReducer(state: ApproverState, action: ApproverAction): ApproverState {
   switch (action.type) {
     case "CLICK_ACTION":
-      // Approve goes straight to auth (no reason needed)
-      return {
-        ...state,
-        action: action.action,
-        stage: action.action === "approve" ? "auth" : "reason",
-      };
+      // Approve goes straight to result (no reason, no auth)
+      if (action.action === "approve") {
+        return { ...state, action: action.action, stage: "result", result: "approved" };
+      }
+      return { ...state, action: action.action, stage: "reason" };
     case "SET_SEND_BACK_TEXT":
       // sendBackText and sendBackQuick are exclusive (radio behavior)
       return { ...state, sendBackText: action.text, sendBackQuick: null };
@@ -65,9 +64,15 @@ export function approverReducer(state: ApproverState, action: ApproverAction): A
     case "SET_OTP":
       return { ...state, otp: action.otp };
     case "START_AUTH":
-      return { ...state, stage: "auth" };
+      // No auth stage — derive result from action and go straight to result
+      {
+        const r: Result = state.action === "approve" ? "approved"
+          : state.action === "sendback" ? "sentback"
+          : "rejected";
+        return { ...state, stage: "result", result: r };
+      }
     case "AUTH_VERIFIED":
-      return { ...state, authState: "done", result: action.result, stage: "result" };
+      return { ...state, result: action.result, stage: "result" };
     case "RESET":
       return INITIAL_STATE;
     default:

@@ -2,13 +2,14 @@
 
 import { Icon } from "@/components/icon";
 import { Btn } from "@/components/btn";
-import type { Result, AuthMethod } from "@/types/approver";
+import type { Result } from "@/types/approver";
 
 interface Props {
   result: Result;
-  authMethod: AuthMethod;
   rfqId: string;
   actorName: string;
+  poNumber: string;
+  vendorName: string;
   onReplay: () => void;
 }
 
@@ -18,7 +19,7 @@ interface ResultConfig {
   border: string;
   iconColor: string;
   title: string;
-  body: string;
+  getBody: (poNumber: string, vendorName: string) => string;
   metaChip: string;
   chipTone: string;
 }
@@ -30,7 +31,7 @@ const RESULT_CONFIG: Record<Result, ResultConfig> = {
     border: "var(--success-border)",
     iconColor: "var(--success)",
     title: "Purchase order sent",
-    body: "PO-2026-0512 sent to Hindalco Forgings Pvt Ltd. Supplier acknowledgement due in 24h.",
+    getBody: (poNumber, vendorName) => `${poNumber} sent to ${vendorName}. Supplier acknowledgement expected within 24 hours.`,
     metaChip: "Approved",
     chipTone: "var(--success-soft)",
   },
@@ -40,7 +41,7 @@ const RESULT_CONFIG: Record<Result, ResultConfig> = {
     border: "var(--info-border)",
     iconColor: "var(--info)",
     title: "Sent back for revision",
-    body: "Asha will revise and resubmit. You’ll get a new email when it’s ready.",
+    getBody: () => "ProcureAI will revise the recommendation and resubmit. You’ll receive a new email when it’s ready.",
     metaChip: "Sent back",
     chipTone: "var(--info-soft)",
   },
@@ -50,13 +51,13 @@ const RESULT_CONFIG: Record<Result, ResultConfig> = {
     border: "var(--danger-border)",
     iconColor: "var(--danger)",
     title: "RFQ rejected",
-    body: "Sourcing for RFQ-2026-0418 will restart. Estimated delivery delay: 9–14 days.",
+    getBody: (_, vendorName) => `${vendorName} will not receive a PO. ProcureAI will restart sourcing. Estimated delay: 9–14 days.`,
     metaChip: "Rejected",
     chipTone: "var(--danger-soft)",
   },
 };
 
-export function ResultView({ result, authMethod, rfqId, actorName, onReplay }: Props) {
+export function ResultView({ result, rfqId, actorName, poNumber, vendorName, onReplay }: Props) {
   const cfg = RESULT_CONFIG[result];
   const now = new Date();
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
@@ -82,7 +83,7 @@ export function ResultView({ result, authMethod, rfqId, actorName, onReplay }: P
           {cfg.title}
         </div>
         <div style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.55, marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
-          {cfg.body}
+          {cfg.getBody(poNumber, vendorName)}
         </div>
 
         {/* Meta chip */}
@@ -101,7 +102,7 @@ export function ResultView({ result, authMethod, rfqId, actorName, onReplay }: P
           marginTop: 20, fontSize: 11.5, color: "var(--text-tertiary)",
           borderTop: "1px solid var(--border-subtle)", paddingTop: 14,
         }}>
-          ✓ Audit log: {actorName} · {authMethod === "passkey" ? "passkey" : "email OTP"} · {timeStr} · MacBook Pro
+          ✓ Audit log: {actorName} · email link · {timeStr}
         </div>
 
         {/* Replay */}

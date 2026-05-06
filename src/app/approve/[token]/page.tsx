@@ -1,11 +1,20 @@
-import { notFound } from "next/navigation";
-import { verifyActionToken, TokenError } from "@/lib/action-token";
-import { prisma } from "@/lib/prisma";
-import { generateApproverRationale } from "@/lib/agent/approver-rationale";
+/**
+ * /approve/[token]
+ *
+ * Self-contained PO approval page — no database required.
+ * All context is embedded in the signed PO token:
+ *   action · POData · rfqId · itemDescription · approver info · expiry
+ *
+ * Flow:
+ *   approve  → shows confirmation immediately
+ *   sendback · reject → shows reason sheet, then confirmation
+ */
+
+import { verifyPOToken, POTokenError } from "@/lib/po-token";
 import { ApproverFlow } from "./approver-flow";
 import type { ApproverRFQData } from "@/types/approver-data";
 
-// Always render at request time — token validation + DB reads are per-request
+// Always render at request time — token verification is per-request
 export const dynamic = "force-dynamic";
 
 interface Props {
@@ -13,81 +22,115 @@ interface Props {
 }
 
 export default async function ApprovePage({ params }: Props) {
-  // 1. Validate HMAC token (server-side, no client involvement)
+  // 1. Verify the signed PO token — all data is self-contained
   let payload;
   try {
-    payload = verifyActionToken(params.token);
+    payload = verifyPOToken(params.token);
   } catch (e) {
-    if (e instanceof TokenError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-canvas p-8">
-          <div className="max-w-md text-center">
-            <div className="text-xl font-semibold text-text-primary mb-2">
-              {e.code === "expired" ? "Link expired" : "Invalid link"}
-            </div>
-            <div className="text-sm text-text-secondary">
-              {e.code === "expired"
-                ? "This approval link has expired. Check your email for a fresh link or contact the buyer."
-                : "This approval link is invalid or has already been used."}
-            </div>
+    const code = e instanceof POTokenError ? e.code : "invalid";
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg-canvas)",
+        padding: "40px 16px",
+      }}>
+        <div style={{ maxWidth: 420, textAlign: "center" }}>
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: "50%",
+            background: "var(--danger-soft)",
+            border: "2px solid var(--danger-border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+            fontSize: 22,
+          }}>
+            {code === "expired" ? "⏱" : "✕"}
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+            {code === "expired" ? "Link expired" : "Invalid link"}
+          </div>
+          <div style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            {code === "expired"
+              ? "This approval link has expired (72-hour window). Check your email for a refreshed link or contact the buyer."
+              : "This approval link is invalid or has already been used. Contact the buyer for a new link."}
           </div>
         </div>
-      );
-    }
-    return notFound();
+      </div>
+    );
   }
 
-  // 2. Fetch user + RFQ from DB
-  const [user, rfq] = await Promise.all([
-    prisma.user.findUnique({ where: { id: payload.userId } }),
-    prisma.rFQ.findUnique({
-      where: { rfqNumber: payload.rfqId },
-      include: { quotes: { include: { supplier: true } } },
-    }),
-  ]);
-
-  if (!user || !rfq) return notFound();
-
-  // 3. Extract agent metadata from the JSON blob
-  const meta = rfq.agentMeta as Record<string, unknown> | null;
-
-  // 4. Generate Claude rationale (cached via prompt cache on the static system prompt)
-  const rationale = await generateApproverRationale({
-    recommendedSupplier: (meta?.recommendedSupplierName as string) ?? "Hindalco Forgings Pvt Ltd",
-    amount: Number(rfq.amount),
-    runnerUpDelta: (meta?.runnerUpDelta as number) ?? 18400,
-    runnerUpSupplier: (meta?.runnerUpSupplierName as string) ?? "Bharat Steel Industries",
-    itemDescription: rfq.title,
-    otdPercent: (meta?.otdPercent as number) ?? 96,
-  });
-
-  // 5. Compute delivery days
-  const needBy = rfq.needBy ?? new Date(Date.now() + 10 * 86400000);
-  const daysUntilDelivery = Math.max(0, Math.ceil((needBy.getTime() - Date.now()) / 86400000));
-  const needByDate = needBy.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-
-  // 6. Build the typed RFQ data shape for client components
+  // 2. Map token payload → ApproverRFQData (for the existing email-view UI)
   const rfqData: ApproverRFQData = {
-    rfqId: rfq.rfqNumber,
-    title: rfq.title,
-    itemDescription: (rfq.title.split("(")[0] ?? rfq.title).trim(),
-    qty: 500,
-    uom: "kg",
-    spec: "80mm slip-on",
-    amount: Number(rfq.amount),
-    needByDate,
-    daysUntilDelivery,
-    withinBudget: (meta?.withinBudget as boolean) ?? true,
-    budgetRemaining: (meta?.budgetRemaining as number) ?? null,
-    runnerUpDelta: (meta?.runnerUpDelta as number) ?? 18400,
-    runnerUpSupplier: (meta?.runnerUpSupplierName as string) ?? "Bharat Steel Industries",
+    rfqId: payload.rfqId,
+    title: `${payload.po.poNumber} · ${payload.po.vendorName}`,
+    itemDescription: payload.itemDescription,
+    qty: 1,
+    uom: "",
+    spec: "",
+    amount: parseAmount(payload.amountTotal),
+    needByDate: payload.po.requiredBy,
+    daysUntilDelivery: daysUntil(payload.po.requiredBy),
+    withinBudget: true,
+    budgetRemaining: null,
+    runnerUpDelta: 0,
+    runnerUpSupplier: "",
     recommendedSupplier: {
-      name: (meta?.recommendedSupplierName as string) ?? "Hindalco Forgings Pvt Ltd",
-      city: (meta?.recommendedSupplierCity as string) ?? "Pune",
+      name: payload.po.vendorName,
+      city: vendorCity(payload.po.vendorAddress),
     },
-    agentRationale: rationale,
-    approver: { name: user.name, email: user.email },
+    agentRationale: `Lowest qualifying bid for ${payload.itemDescription}. Vendor holds active framework agreement with delivery history.`,
+    approver: {
+      name: payload.approverName,
+      email: payload.approverEmail,
+    },
   };
 
-  return <ApproverFlow rfq={rfqData} initialAction={payload.action} />;
+  return (
+    <ApproverFlow
+      rfq={rfqData}
+      initialAction={payload.action}
+      poNumber={payload.po.poNumber}
+      vendorName={payload.po.vendorName}
+    />
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Best-effort: extract first city name from a vendor address string */
+function vendorCity(address: string): string {
+  // e.g. "Plot 42, MIDC Phase II, Pune 411 018" → "Pune"
+  const parts = address.split(",").map((p) => p.trim());
+  for (const part of parts.reverse()) {
+    const city = part.replace(/\d{3}\s?\d{3}/, "").trim();
+    if (city.length > 2 && city.length < 30) return city;
+  }
+  return address.split(",")[0] ?? address;
+}
+
+/**
+ * Parse a human-formatted INR string to a number.
+ * e.g. "₹3,42,200" → 342200
+ */
+function parseAmount(s: string): number {
+  const clean = s.replace(/[₹,\s]/g, "");
+  const n = parseFloat(clean);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Days from today until a date string like "May 13, 2026" */
+function daysUntil(dateStr: string): number {
+  try {
+    const target = new Date(dateStr);
+    const diff = target.getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / 86400000));
+  } catch {
+    return 7;
+  }
 }

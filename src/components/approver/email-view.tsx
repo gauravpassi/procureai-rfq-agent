@@ -126,7 +126,7 @@ export function EmailView({ rfq, onAction }: Props) {
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
                 <Icon name="bolt" size={13} color="var(--text-tertiary)" />
                 <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  One-tap actions · authentication required
+                  One-tap actions · no login required
                 </span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -180,7 +180,7 @@ export function EmailView({ rfq, onAction }: Props) {
               </div>
               <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-tertiary)", display: "flex", alignItems: "flex-start", gap: 5 }}>
                 <Icon name="info" size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-                Each action opens a passkey or OTP challenge — secure, audit-logged, no login needed.
+                Clicking an action records your decision instantly. Links expire in 72 hours.
               </div>
             </div>
           </div>
