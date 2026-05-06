@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Full-height layout root — required for h-screen children to work correctly */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ProcureAI design tokens — ported verbatim from the design handoff
+ * Source: design_handoff_procureai/design_files/tokens.css
+ * These values are FINAL per the README. Do not change without design review.
+ */
+:root {
+  /* Neutrals */
+  --bg-canvas: #f6f6f4;
+  --bg-app: #ffffff;
+  --bg-subtle: #fafaf9;
+  --bg-muted: #f3f3f1;
+  --bg-hover: #efefec;
+  --bg-inset: #f7f7f5;
+
+  --border-subtle: #ebebe7;
+  --border-default: #e2e2dd;
+  --border-strong: #d4d4cd;
+  --border-focus: #1a1a18;
+
+  --text-primary: #1a1a18;
+  --text-secondary: #56564f;
+  --text-tertiary: #84847b;
+  --text-disabled: #b0b0a4;
+  --text-inverse: #ffffff;
+
+  /* Accent — Upcore brand cyan→blue */
+  --accent: #1ca7e0;
+  --accent-hover: #1488c4;
+  --accent-soft: #e6f6fc;
+  --accent-text: #ffffff;
+  --accent-border: #a8e0f4;
+  --accent-deep: #0a4a8a;
+  --accent-cyan: #4dd0e1;
+  --brand-grey: #7d7d7d;
+  --brand-grey-deep: #5a5a5a;
+  --brand-gradient: linear-gradient(135deg, #4dd0e1 0%, #1ca7e0 50%, #0a4a8a 100%);
+
+  /* Semantic */
+  --success: #15803d;
+  --success-soft: #ecfdf5;
+  --success-border: #bbf7d0;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-border: #fde68a;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --danger-border: #fecaca;
+  --info: #1e40af;
+  --info-soft: #eff6ff;
+  --info-border: #bfdbfe;
+
+  /* Agent — reserved for AI-attributable elements only */
+  --agent: #6d28d9;
+  --agent-soft: #f5f3ff;
+  --agent-border: #ddd6fe;
+
+  /* Type — wired to next/font in layout.tsx */
+  --font-sans: var(--font-geist-sans), 'Söhne', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: var(--font-geist-sans), ui-sans-serif, sans-serif;
+
+  /* Density — overridden by Tweaks panel; defaults = Balanced */
+  --row-h: 40px;
+  --pad-x: 16px;
+  --pad-y: 12px;
+  --gap: 12px;
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* Elevation */
+  --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 1px 0 rgba(0, 0, 0, 0.02), 0 4px 14px rgba(0, 0, 0, 0.06);
+  --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+/* Density modes — applied via data-density on <html> */
+html[data-density='compact'] { --row-h: 36px; --pad-x: 12px; --pad-y: 8px; --gap: 8px; }
+html[data-density='balanced'] { --row-h: 40px; --pad-x: 16px; --pad-y: 12px; --gap: 12px; }
+html[data-density='spacious'] { --row-h: 44px; --pad-x: 20px; --pad-y: 16px; --gap: 16px; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+button { font-family: inherit; }
+input, textarea, select { font-family: inherit; color: inherit; }
+
+/* Tabular numerics where money / numbers align */
+.num, .mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.mono { font-family: var(--font-mono); }
+
+/* Focus ring — applied via :focus-visible */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}

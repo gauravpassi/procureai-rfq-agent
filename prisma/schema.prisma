@@ -1,0 +1,172 @@
+// ProcureAI schema — covers Phase 1 (Approver) + stubs for all surfaces.
+// Columns will be expanded per-phase as features land.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  REQUESTER
+  BUYER
+  APPROVER
+  ADMIN
+}
+
+enum ActionType {
+  APPROVE
+  SEND_BACK
+  REJECT
+  OVERRIDE
+  SUBMIT_PR
+  AWARD
+  CLARIFY
+  PO_ACK
+}
+
+enum AuthMethod {
+  PASSKEY
+  OTP
+}
+
+model User {
+  id            String               @id @default(cuid())
+  email         String               @unique
+  name          String
+  role          UserRole
+  costCenter    String?
+  passkeys      PasskeyCredential[]
+  otpChallenges OtpChallenge[]
+  auditEntries  AuditLog[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+// WebAuthn credentials per @simplewebauthn/server
+model PasskeyCredential {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id])
+  userId       String
+  credentialID Bytes     @unique
+  publicKey    Bytes
+  counter      BigInt
+  deviceType   String
+  backedUp     Boolean
+  transports   String[]  @default([])
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+}
+
+model OtpChallenge {
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  // SHA-256 of the OTP — never store the plaintext code
+  codeHash    String
+  // Bound to the email HMAC action token so OTP cannot be replayed elsewhere
+  actionToken String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
+// Append-only audit log — every approver action, override, date-mismatch decision
+model AuditLog {
+  id        String      @id @default(cuid())
+  actor     User        @relation(fields: [actorId], references: [id])
+  actorId   String
+  action    ActionType
+  // Free-form target ref e.g. "RFQ-2026-0418" or "PO-2026-0512"
+  target    String
+  method    AuthMethod?
+  ip        String?
+  device    String?
+  reason    String?
+  meta      Json?
+  createdAt DateTime    @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([target, createdAt])
+}
+
+model Supplier {
+  id        String          @id @default(cuid())
+  name      String
+  city      String?
+  email     String?
+  phone     String?
+  quotes    Quote[]
+  pos       PurchaseOrder[]
+  createdAt DateTime        @default(now())
+}
+
+model PurchaseRequest {
+  id              String          @id @default(cuid())
+  prNumber        String          @unique
+  requesterId     String
+  itemDescription String
+  qty             Float
+  uom             String
+  requiredBy      DateTime
+  costCenter      String
+  justification   String?
+  status          String          @default("submitted")
+  rfqs            RFQ[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model RFQ {
+  id        String           @id @default(cuid())
+  rfqNumber String           @unique
+  title     String
+  amount    Decimal          @db.Decimal(18, 2)
+  currency  String           @default("INR")
+  pr        PurchaseRequest? @relation(fields: [prId], references: [id])
+  prId      String?
+  status    String           @default("draft")
+  needBy    DateTime?
+  quotes    Quote[]
+  pos       PurchaseOrder[]
+  // AgentField envelope snapshot for the agent recommendation
+  agentMeta Json?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model Quote {
+  id            String   @id @default(cuid())
+  rfq           RFQ      @relation(fields: [rfqId], references: [id])
+  rfqId         String
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  supplierId    String
+  unitPrice     Decimal  @db.Decimal(18, 2)
+  leadTimeDays  Int
+  paymentTerms  String
+  validUntil    DateTime
+  freight       String?
+  attachmentUrl String?
+  status        String   @default("submitted")
+  createdAt     DateTime @default(now())
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  poNumber      String   @unique
+  rfq           RFQ      @relation(fields: [rfqId], references: [id])
+  rfqId         String
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  supplierId    String
+  amount        Decimal  @db.Decimal(18, 2)
+  requiredDate  DateTime
+  confirmedDate DateTime?
+  ackStatus     String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
