@@ -361,14 +361,14 @@ function HumanGateCard({
             kind="secondary"
             size="md"
             onClick={() => {
-              if (!hasPO && hasBidTable) {
+              if (hasBidTable) {
                 setShowBidTable((v) => !v);
               } else {
                 onAction("alt1");
               }
             }}
           >
-            {!hasPO && hasBidTable
+            {hasBidTable
               ? showBidTable ? "Hide bids" : step.humanAltCTAs[0]
               : step.humanAltCTAs[0]}
           </Btn>
