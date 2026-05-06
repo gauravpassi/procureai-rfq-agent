@@ -81,6 +81,20 @@ const STEP_CONTEXTS: Record<string, string> = {
   "s5-extract":
     `PDF parsed (4 pages): item = **1-inch braided hydraulic hose, SAE 100R2AT, 280 bar WP**, 6 quantity variants (2m, 5m, 10m + custom). Target lead time **21 days**. No SAP PR linked — spec is valid but RFQ creation requires a PR attachment and buyer confirmation.`,
 
+  // ── Generic demo pipeline steps (used by dynamically generated signals) ─────
+  "demo-capture":
+    `New procurement signal detected and authenticated. Sender identity verified against employee directory and **procurement authority matrix**. Signal routed to **priority intake queue** based on urgency classification and sender's active PO history.`,
+  "demo-parse":
+    `Extracting structured requirements using NLP and SAP material master cross-reference. **Material specification**, quantity, cost centre, and delivery date confirmed. Low-confidence fields flagged for buyer review. Budget impact estimated against current cost centre balance.`,
+  "demo-shortlist":
+    `Vendor master filtered by **certification requirements** and on-time delivery history over the last 12 months. Removing vendors with open quality holds or outstanding payment disputes. Shortlist covers suppliers with active framework agreements and relevant plant delivery history.`,
+  "demo-monitor":
+    `RFQ dispatched to shortlisted suppliers via **email and Coupa portal**. Monitoring vendor inboxes for quote responses. Will auto-parse incoming quotes to extract price, lead time, and specification compliance on arrival.`,
+  "demo-compare":
+    `All quotes received and parsed. Running **price/delivery/OTD comparison matrix** with weighted scoring: price 50%, delivery compliance 30%, OTD history 20%. Recommended vendor identified as lowest-cost qualifying supplier within budget and delivery constraints.`,
+  "demo-po":
+    `Purchase Order generated with agent-drafted line items, vendor details from master data, and plant delivery address. **PO number assigned** from SAP sequence. Finance countersign route triggered — PO released to supplier on approval.`,
+
   // ── s6 — Coupa: welding electrodes (fully complete) ────────────────────────
   "s6":
     `Coupa Req-9921 approved by D. Mehta: 50 boxes ESAB E7018 welding electrodes 3.15mm, Plant 2 fab shop, need by May 15. Requisition is category-coded and fully structured — **RFQ is ready to send to 3 ESAB-authorised dealers**. Auto-sending in 30 seconds unless paused.`,

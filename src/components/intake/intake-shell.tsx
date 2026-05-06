@@ -3,16 +3,16 @@
 /**
  * IntakeShell — full Intake surface with live pipeline view.
  *
- * Manages the pipeline state for all 6 demo signals. Each signal has a
- * step-by-step procurement pipeline that:
- *  - Pre-populates with some done steps to show variety across signals
- *  - Can be reset and replayed via "▶ Run Live Demo"
- *  - Pauses at human gates so the buyer can take action
- *  - Advances automatically after human action
+ * Each "▶ Run Live Demo" click:
+ *  1. Picks a fresh scenario (rotates through 5 pre-baked materials/sources)
+ *  2. Prepends a NEW signal card to the left panel
+ *  3. Selects it and animates the full pipeline from step 0
+ *  4. Pauses at human gates for buyer approval
+ *  5. Final gate shows a fully formatted Purchase Order for review
  */
 
 import { useState, useRef, useCallback } from "react";
-import type { Signal, PipelineStep } from "@/types/intake";
+import type { Signal, PipelineStep, SignalSource } from "@/types/intake";
 import { ConnectorStrip } from "./connector-strip";
 import { SignalCard } from "./signal-card";
 import { PipelineView } from "./pipeline-view";
@@ -20,9 +20,9 @@ import { BrandMark } from "@/components/brand-mark";
 import { Pill } from "@/components/pill";
 import { Btn } from "@/components/btn";
 
-// ── Static signal metadata ───────────────────────────────────────────────────
+// ── Static signal metadata (pre-seeded, always visible) ──────────────────────
 
-const SIGNALS: Signal[] = [
+const STATIC_SIGNALS: Signal[] = [
   { id: "s1", source: "outlook",    from: "priya.menon@acmemfg.in",   subject: "Urgent: 500 kg SS 316 flanges for Plant 2 retrofit",     when: "9 min ago",  confidence: 96 },
   { id: "s2", source: "sap",        from: "SAP MM · PR 4500001234",    subject: "PR 4500001234 · 200 nos · CNC inserts",                  when: "24 min ago", confidence: 99 },
   { id: "s3", source: "salesforce", from: "Salesforce · Opp 0061a000", subject: "Project Aurora · BOM upload triggered",                  when: "38 min ago", confidence: 78 },
@@ -31,10 +31,9 @@ const SIGNALS: Signal[] = [
   { id: "s6", source: "coupa",      from: "Coupa · Req-9921",          subject: "Req-9921 · Welding electrodes · 50 boxes",              when: "3 h ago",    confidence: 97 },
 ];
 
-// ── Initial pipeline definitions ────────────────────────────────────────────
-// Pre-seeded with realistic state: different signals at different stages.
+// ── Static pipeline definitions ──────────────────────────────────────────────
 
-const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
+const STATIC_PIPELINE_DEFS: Record<string, PipelineStep[]> = {
 
   // s1 — Email: 3 agent steps done, sitting at "Review & Send RFQ" human gate
   s1: [
@@ -71,22 +70,38 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
     { id: "s1-5", kind: "agent", label: "Compare Bids",
       status: "locked", narrativeKey: "s1-compare",
       agentSummary: "Bharat Steel recommended · ₹2.9L · 14.7% below budget" },
-    { id: "s1-6", kind: "human-gate", label: "Select Supplier & Approve PO",
+    { id: "s1-6", kind: "human-gate", label: "Review & Approve PO",
       status: "locked",
-      humanTitle: "Review bid comparison and approve purchase",
-      humanSubtitle: "Agent recommendation: Bharat Steel · ₹2.9L · IS 6392 certified · 91% OTD",
-      humanCTA: "Approve Bharat Steel & Generate PO",
-      humanAltCTAs: ["Review all bids"],
-      humanDoneText: "Bharat Steel approved · PO-2026-0884 generated",
+      humanTitle: "Review Purchase Order — Bharat Steel",
+      humanSubtitle: "Agent recommendation: Bharat Steel · ₹2.9L · IS 6392 certified · 91% OTD · 14.7% below budget",
+      humanCTA: "Send PO to Vendor",
+      humanAltCTAs: ["Review all bids", "Request revision"],
+      humanDoneText: "PO-2026-0884 sent to Bharat Steel · delivery confirmed May 13",
       bidTable: [
-        { vendor: "Bharat Steel",     price: "₹2.9L",  delivery: "May 13", otd: "91%", certified: true,  status: "received", recommended: true },
+        { vendor: "Bharat Steel",      price: "₹2.9L",  delivery: "May 13", otd: "91%", certified: true,  status: "received", recommended: true },
         { vendor: "Hindalco Forgings", price: "₹3.2L",  delivery: "May 15", otd: "96%", certified: true,  status: "received" },
-        { vendor: "Steelmark",        price: "₹3.35L", delivery: "May 16", otd: "89%", certified: true,  status: "received" },
-        { vendor: "MTI Forge",        price: "—",       delivery: "—",      otd: "87%", certified: true,  status: "no-response" },
-      ] },
-    { id: "s1-7", kind: "agent", label: "Release PO to Supplier",
+        { vendor: "Steelmark",         price: "₹3.35L", delivery: "May 16", otd: "89%", certified: true,  status: "received" },
+        { vendor: "MTI Forge",         price: "—",       delivery: "—",      otd: "87%", certified: true,  status: "no-response" },
+      ],
+      poData: {
+        poNumber: "PO-2026-0884",
+        date: "May 6, 2026",
+        terms: "Net 30",
+        vendorName: "Bharat Steel Pvt. Ltd.",
+        vendorAddress: "Plot 42, MIDC Phase II, Pune 411 018",
+        vendorGST: "27AABCB1234A1Z5",
+        deliverTo: "Plant 2, Godrej Complex, Pune 411 026",
+        requiredBy: "May 13, 2026",
+        lineItems: [
+          { description: "SS 316 Flanges 80mm Slip-On IS 6392", quantity: "500", unit: "kg", unitPrice: "₹580/kg", amount: "₹2,90,000" },
+        ],
+        subtotal: "₹2,90,000",
+        gst: "₹52,200",
+        total: "₹3,42,200",
+      } },
+    { id: "s1-7", kind: "agent", label: "PO Delivered to Supplier",
       status: "locked", narrativeKey: "s1-po",
-      agentSummary: "PO released · Bharat Steel acknowledged · delivery May 13" },
+      agentSummary: "PO-2026-0884 released · Bharat Steel acknowledged · delivery May 13" },
   ],
 
   // s2 — SAP PR: past first gate, currently monitoring quotes
@@ -112,17 +127,40 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
     { id: "s2-5", kind: "agent", label: "Compare Bids",
       status: "locked", narrativeKey: "s2-compare",
       agentSummary: "Mitsubishi recommended · ₹1.87L · fastest lead time" },
-    { id: "s2-6", kind: "human-gate", label: "Select Supplier & Approve PO",
+    { id: "s2-6", kind: "human-gate", label: "Review & Approve PO",
       status: "locked",
-      humanTitle: "Select winning vendor and approve PO",
-      humanCTA: "Approve & Generate PO",
-      humanDoneText: "Mitsubishi Materials approved · PO-2026-0882 generated" },
-    { id: "s2-7", kind: "agent", label: "Release PO",
+      humanTitle: "Review Purchase Order — Mitsubishi Materials",
+      humanSubtitle: "Agent recommendation: Mitsubishi Materials · ₹1.87L · ISO 9001 · 14-day delivery",
+      humanCTA: "Send PO to Vendor",
+      humanAltCTAs: ["Review all bids", "Request revision"],
+      humanDoneText: "PO-2026-0882 sent to Mitsubishi Materials",
+      bidTable: [
+        { vendor: "Mitsubishi Materials", price: "₹1.87L", delivery: "May 14", otd: "94%", certified: true, status: "received", recommended: true },
+        { vendor: "Sandvik Coromant",     price: "₹1.94L", delivery: "May 15", otd: "92%", certified: true, status: "received" },
+        { vendor: "Kennametal",           price: "₹2.05L", delivery: "May 16", otd: "89%", certified: true, status: "received" },
+      ],
+      poData: {
+        poNumber: "PO-2026-0882",
+        date: "May 6, 2026",
+        terms: "Net 30",
+        vendorName: "Mitsubishi Materials India Pvt. Ltd.",
+        vendorAddress: "Tower A, DLF Cyber City, Gurgaon 122 002",
+        vendorGST: "06AAECM1234M1ZK",
+        deliverTo: "Plant 2000, Tool Crib, Pune 411 026",
+        requiredBy: "May 14, 2026",
+        lineItems: [
+          { description: "CNMG 120408 TiAlN Coated Carbide Insert", quantity: "200", unit: "EA", unitPrice: "₹935/EA", amount: "₹1,87,000" },
+        ],
+        subtotal: "₹1,87,000",
+        gst: "₹33,660",
+        total: "₹2,20,660",
+      } },
+    { id: "s2-7", kind: "agent", label: "PO Delivered to Supplier",
       status: "locked", narrativeKey: "s2-po",
-      agentSummary: "PO released · supplier acknowledged" },
+      agentSummary: "PO-2026-0882 released · Mitsubishi acknowledged · delivery May 14" },
   ],
 
-  // s3 — Salesforce BOM: agent currently enriching (step 1 running)
+  // s3 — Salesforce BOM: agent currently enriching
   s3: [
     { id: "s3-0", kind: "agent", label: "BOM Upload Triggered",
       status: "done",
@@ -180,7 +218,7 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
         { label: "Item",            value: "SKF 6205-2RS deep-groove ball bearing", confidence: 97 },
         { label: "Qty needed",      value: "~4 units",                              confidence: 85, flag: true },
         { label: "Stock available", value: "42 units · Plant 1 Stores",            confidence: 100 },
-        { label: "Transfer ETA",    value: "2 days (May 7)",                        confidence: 95 },
+        { label: "Transfer ETA",    value: "2 days (May 8)",                        confidence: 95 },
       ] },
     { id: "s4-4", kind: "agent", label: "Reply to Anand on Slack",
       status: "locked",
@@ -200,7 +238,7 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
     { id: "s5-2", kind: "human-gate", label: "Confirm Spec & Link PR",
       status: "awaiting-human",
       humanTitle: "Confirm extracted spec and link a SAP Purchase Request",
-      humanSubtitle: "No SAP PR linked — agent cannot create an RFQ without a PR number. Review spec and attach a PR to proceed.",
+      humanSubtitle: "No SAP PR linked — agent cannot create an RFQ without a PR number.",
       humanCTA: "Link PR & Create RFQ",
       humanAltCTAs: ["Edit spec fields", "Reject"],
       humanDoneText: "PR linked · RFQ creation queued",
@@ -222,14 +260,14 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
     { id: "s5-5", kind: "agent", label: "Monitor & Compare Quotes",
       status: "locked",
       agentSummary: "Await quotes and surface comparison" },
-    { id: "s5-6", kind: "human-gate", label: "Approve Supplier",
+    { id: "s5-6", kind: "human-gate", label: "Review & Approve PO",
       status: "locked",
-      humanTitle: "Select winning supplier",
-      humanCTA: "Approve & Generate PO",
-      humanDoneText: "Approved · PO generated" },
+      humanTitle: "Review Purchase Order",
+      humanCTA: "Send PO to Vendor",
+      humanDoneText: "PO sent to approved vendor" },
   ],
 
-  // s6 — Coupa: fully complete, all steps done
+  // s6 — Coupa: fully complete
   s6: [
     { id: "s6-0", kind: "agent", label: "Requisition Received",
       status: "done",
@@ -243,103 +281,506 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
     { id: "s6-3", kind: "agent", label: "Quotes Compared",
       status: "done",
       agentSummary: "Bharat Welding at ₹36,200 · 3-day delivery · lowest price · recommended" },
-    { id: "s6-4", kind: "human-gate", label: "Supplier Approved",
+    { id: "s6-4", kind: "human-gate", label: "PO Approved & Sent",
       status: "human-done",
-      humanDoneText: "Bharat Welding Supplies approved · PO-2026-0881 generated" },
-    { id: "s6-5", kind: "agent", label: "PO Released",
+      humanDoneText: "PO-2026-0881 sent to Bharat Welding Supplies" },
+    { id: "s6-5", kind: "agent", label: "PO Delivered to Supplier",
       status: "done",
       agentSummary: "PO-2026-0881 released · Bharat Welding acknowledged · delivery confirmed May 6" },
   ],
 };
 
+// ── Demo scenarios — 5 fresh procurement flows with unique data ───────────────
+
+interface DemoScenario {
+  source: SignalSource;
+  from: string;
+  subject: string;
+  confidence: number;
+  makeSteps: (id: string) => PipelineStep[];
+}
+
+const DEMO_SCENARIOS: DemoScenario[] = [
+  // ── Scenario 0: Copper bus bars (SAP PR) ────────────────────────────────────
+  {
+    source: "sap",
+    from: "SAP MM · PR 4500001289",
+    subject: "PR 4500001289 · 80m · Copper bus bars 40×5mm",
+    confidence: 99,
+    makeSteps: (id) => [
+      { id: `${id}-0`, kind: "agent", label: "PR Synced from SAP",
+        status: "locked", narrativeKey: "demo-capture",
+        agentSummary: "PR 4500001289 auto-captured · ETP Copper bus bar 40×5mm · PLT3-CAP-Q2 · SURESH.P" },
+      { id: `${id}-1`, kind: "agent", label: "Parsed & Enriched",
+        status: "locked", narrativeKey: "demo-parse",
+        agentSummary: "80 metres ETP Copper bus bar IS 613 · est. ₹1.8L · Switchgear Panel Shop, Nashik" },
+      { id: `${id}-2`, kind: "agent", label: "Suppliers Shortlisted",
+        status: "locked", narrativeKey: "demo-shortlist",
+        agentSummary: "3 IS 613-certified vendors · Hindalco Copper, Sterlite, Rajasthan Metals" },
+      { id: `${id}-3`, kind: "human-gate", label: "Review & Send RFQ",
+        status: "locked",
+        humanTitle: "Agent-drafted RFQ ready — review before sending to 3 suppliers",
+        humanSubtitle: "RFQ-2026-0425 · quote deadline May 9 · est. ₹1.8L within budget",
+        humanCTA: "Send RFQ to 3 suppliers",
+        humanAltCTAs: ["Edit fields"],
+        humanDoneText: "RFQ-2026-0425 sent · 3 suppliers notified",
+        rfqFields: [
+          { label: "Material",    value: "ETP Copper bus bar 40×5×3000mm IS 613", confidence: 99 },
+          { label: "Quantity",    value: "80 metres (~122 kg)",                    confidence: 99 },
+          { label: "Required by", value: "May 12, 2026",                           confidence: 96 },
+          { label: "Deliver to",  value: "Switchgear Panel Shop, Nashik 422 007",  confidence: 100 },
+          { label: "Budget",      value: "₹2.2L est. · ₹8.4L remaining",          confidence: 100 },
+          { label: "Suppliers",   value: "Hindalco Copper · Sterlite · Rajasthan Metals", confidence: 95 },
+        ] },
+      { id: `${id}-4`, kind: "agent", label: "Monitor for Quotes",
+        status: "locked", narrativeKey: "demo-monitor",
+        agentSummary: "RFQ-2026-0425 dispatched · monitoring 3 inboxes" },
+      { id: `${id}-5`, kind: "agent", label: "Compare Bids",
+        status: "locked", narrativeKey: "demo-compare",
+        agentSummary: "Hindalco Copper recommended · ₹1.61L · 10.5% below budget" },
+      { id: `${id}-6`, kind: "human-gate", label: "Review & Approve PO",
+        status: "locked",
+        humanTitle: "Review Purchase Order — Hindalco Copper",
+        humanSubtitle: "Hindalco Copper · ₹1.61L · IS 613 certified · 94% OTD · 10.5% below budget",
+        humanCTA: "Send PO to Vendor",
+        humanAltCTAs: ["Review all bids", "Request revision"],
+        humanDoneText: "PO-2026-0885 sent to Hindalco Copper · delivery confirmed May 11",
+        bidTable: [
+          { vendor: "Hindalco Copper",   price: "₹1.61L", delivery: "May 11", otd: "94%", certified: true, status: "received", recommended: true },
+          { vendor: "Sterlite Copper",   price: "₹1.72L", delivery: "May 13", otd: "91%", certified: true, status: "received" },
+          { vendor: "Rajasthan Metals",  price: "₹1.80L", delivery: "May 15", otd: "88%", certified: true, status: "received" },
+        ],
+        poData: {
+          poNumber: "PO-2026-0885",
+          date: "May 6, 2026",
+          terms: "Net 30",
+          vendorName: "Hindalco Copper Pvt. Ltd.",
+          vendorAddress: "Plot 7, MIDC Industrial Area, Nashik 422 007",
+          vendorGST: "27AACHH2468C1ZK",
+          deliverTo: "Switchgear Panel Shop, Nashik 422 007",
+          requiredBy: "May 12, 2026",
+          lineItems: [
+            { description: "ETP Copper bus bar 40×5mm IS 613", quantity: "80", unit: "m", unitPrice: "₹2,012/m", amount: "₹1,60,960" },
+          ],
+          subtotal: "₹1,60,960",
+          gst: "₹28,972",
+          total: "₹1,89,932",
+        } },
+      { id: `${id}-7`, kind: "agent", label: "PO Delivered to Supplier",
+        status: "locked", narrativeKey: "demo-po",
+        agentSummary: "PO-2026-0885 released · Hindalco Copper acknowledged · delivery May 11" },
+    ],
+  },
+
+  // ── Scenario 1: Hydraulic seal kit (Teams) ──────────────────────────────────
+  {
+    source: "teams",
+    from: "Teams · #maintenance-cell2",
+    subject: "Ravi K: Hydraulic seal kit for Godrej 100T press — urgent",
+    confidence: 83,
+    makeSteps: (id) => [
+      { id: `${id}-0`, kind: "agent", label: "Signal Captured",
+        status: "locked", narrativeKey: "demo-capture",
+        agentSummary: "Teams message from Ravi K · #maintenance-cell2 · @ProcureAI mention routed to intake" },
+      { id: `${id}-1`, kind: "agent", label: "Parsed & Enriched",
+        status: "locked", narrativeKey: "demo-parse",
+        agentSummary: "Godrej 100T press seal rebuild kit · qty 2 kits + 50 O-rings · est. ₹65,000 · URGENT" },
+      { id: `${id}-2`, kind: "agent", label: "Suppliers Shortlisted",
+        status: "locked", narrativeKey: "demo-shortlist",
+        agentSummary: "3 OEM-compatible seal suppliers · Parker Hannifin, Trelleborg, Freudenberg" },
+      { id: `${id}-3`, kind: "human-gate", label: "Review & Send RFQ",
+        status: "locked",
+        humanTitle: "Agent-drafted RFQ ready — urgent hydraulic seal kit",
+        humanSubtitle: "RFQ-2026-0426 · quote deadline May 8 (urgent) · est. ₹65,000",
+        humanCTA: "Send RFQ to 3 suppliers",
+        humanAltCTAs: ["Edit fields"],
+        humanDoneText: "RFQ-2026-0426 sent · 3 suppliers notified · urgent flag set",
+        rfqFields: [
+          { label: "Item",        value: "Godrej 100T press hydraulic seal rebuild kit", confidence: 89 },
+          { label: "Quantity",    value: "2 kits + 50 O-ring assorted",                  confidence: 91 },
+          { label: "Required by", value: "May 9, 2026 (URGENT)",                         confidence: 94, flag: true },
+          { label: "Deliver to",  value: "Maintenance Store, Plant 2, Pune",              confidence: 100 },
+          { label: "Budget",      value: "₹75,000 est. · ₹3.2L remaining",               confidence: 100 },
+          { label: "Suppliers",   value: "Parker Hannifin · Trelleborg · Freudenberg",    confidence: 95 },
+        ] },
+      { id: `${id}-4`, kind: "agent", label: "Monitor for Quotes",
+        status: "locked", narrativeKey: "demo-monitor",
+        agentSummary: "RFQ-2026-0426 dispatched · urgent flag · 3 inboxes monitored" },
+      { id: `${id}-5`, kind: "agent", label: "Compare Bids",
+        status: "locked", narrativeKey: "demo-compare",
+        agentSummary: "Parker Hannifin India recommended · ₹64,500 · OEM compatibility confirmed" },
+      { id: `${id}-6`, kind: "human-gate", label: "Review & Approve PO",
+        status: "locked",
+        humanTitle: "Review Purchase Order — Parker Hannifin India",
+        humanSubtitle: "Parker Hannifin India · ₹64,500 · OEM-compatible · delivery May 8 (within urgent window)",
+        humanCTA: "Send PO to Vendor",
+        humanAltCTAs: ["Review all bids", "Request revision"],
+        humanDoneText: "PO-2026-0886 sent to Parker Hannifin · delivery confirmed May 8",
+        bidTable: [
+          { vendor: "Parker Hannifin India", price: "₹64,500", delivery: "May 8",  otd: "93%", certified: true, status: "received", recommended: true },
+          { vendor: "Trelleborg Sealing",    price: "₹68,200", delivery: "May 9",  otd: "90%", certified: true, status: "received" },
+          { vendor: "Freudenberg India",     price: "₹71,000", delivery: "May 10", otd: "88%", certified: true, status: "received" },
+        ],
+        poData: {
+          poNumber: "PO-2026-0886",
+          date: "May 6, 2026",
+          terms: "Net 15 (urgent)",
+          vendorName: "Parker Hannifin India Pvt. Ltd.",
+          vendorAddress: "Unit 4, Bhosari MIDC, Pune 411 026",
+          vendorGST: "27AABCP9876B1ZP",
+          deliverTo: "Maintenance Store, Plant 2, Pune 411 026",
+          requiredBy: "May 9, 2026 (URGENT)",
+          lineItems: [
+            { description: "Godrej 100T Press Hydraulic Seal Rebuild Kit", quantity: "2", unit: "kits", unitPrice: "₹28,000/kit", amount: "₹56,000" },
+            { description: "O-ring Assorted Set (50 pcs)",                 quantity: "1", unit: "lot",  unitPrice: "₹8,500",       amount: "₹8,500" },
+          ],
+          subtotal: "₹64,500",
+          gst: "₹11,610",
+          total: "₹76,110",
+        } },
+      { id: `${id}-7`, kind: "agent", label: "PO Delivered to Supplier",
+        status: "locked", narrativeKey: "demo-po",
+        agentSummary: "PO-2026-0886 released · Parker Hannifin acknowledged · delivery May 8" },
+    ],
+  },
+
+  // ── Scenario 2: MIG welding wire (Coupa) ───────────────────────────────────
+  {
+    source: "coupa",
+    from: "Coupa · Req-9934",
+    subject: "Req-9934 · MIG welding wire ER70S-6 · 14 spools",
+    confidence: 97,
+    makeSteps: (id) => [
+      { id: `${id}-0`, kind: "agent", label: "Requisition Received",
+        status: "locked", narrativeKey: "demo-capture",
+        agentSummary: "Coupa Req-9934 · D. Mehta approved · 14 × 15kg ER70S-6 MIG wire spools" },
+      { id: `${id}-1`, kind: "agent", label: "Parsed & Enriched",
+        status: "locked", narrativeKey: "demo-parse",
+        agentSummary: "ESAB ER70S-6 0.8mm MIG wire · 14 spools (210 kg) · PLT1-FAB-Q2 · est. ₹82,320" },
+      { id: `${id}-2`, kind: "agent", label: "Suppliers Shortlisted",
+        status: "locked", narrativeKey: "demo-shortlist",
+        agentSummary: "3 authorised ESAB dealers · ESAB India, Ador Welding, Lincoln Electric" },
+      { id: `${id}-3`, kind: "human-gate", label: "Review & Send RFQ",
+        status: "locked",
+        humanTitle: "Agent-drafted RFQ ready — review before sending to 3 suppliers",
+        humanSubtitle: "RFQ-2026-0427 · quote deadline May 8 · est. ₹82,320 within budget",
+        humanCTA: "Send RFQ to 3 suppliers",
+        humanAltCTAs: ["Edit fields"],
+        humanDoneText: "RFQ-2026-0427 sent · 3 welding wire dealers notified",
+        rfqFields: [
+          { label: "Material",    value: "ER70S-6 MIG welding wire 0.8mm dia 15kg spool", confidence: 99 },
+          { label: "Quantity",    value: "14 spools (210 kg)",                              confidence: 99 },
+          { label: "Required by", value: "May 10, 2026",                                    confidence: 98 },
+          { label: "Deliver to",  value: "Fabrication Bay, Plant 1, Pune 411 019",          confidence: 100 },
+          { label: "Budget",      value: "₹95,000 est. · ₹2.1L remaining",                 confidence: 100 },
+          { label: "Suppliers",   value: "ESAB India · Ador Welding · Lincoln Electric",    confidence: 97 },
+        ] },
+      { id: `${id}-4`, kind: "agent", label: "Monitor for Quotes",
+        status: "locked", narrativeKey: "demo-monitor",
+        agentSummary: "RFQ-2026-0427 dispatched · monitoring 3 dealer inboxes" },
+      { id: `${id}-5`, kind: "agent", label: "Compare Bids",
+        status: "locked", narrativeKey: "demo-compare",
+        agentSummary: "ESAB India recommended · ₹82,320 · genuine product · fastest delivery" },
+      { id: `${id}-6`, kind: "human-gate", label: "Review & Approve PO",
+        status: "locked",
+        humanTitle: "Review Purchase Order — ESAB India",
+        humanSubtitle: "ESAB India · ₹82,320 · genuine ER70S-6 · delivery May 9 · 13.3% below budget",
+        humanCTA: "Send PO to Vendor",
+        humanAltCTAs: ["Review all bids", "Request revision"],
+        humanDoneText: "PO-2026-0887 sent to ESAB India · delivery confirmed May 9",
+        bidTable: [
+          { vendor: "ESAB India",     price: "₹82,320", delivery: "May 9",  otd: "97%", certified: true, status: "received", recommended: true },
+          { vendor: "Ador Welding",   price: "₹87,500", delivery: "May 9",  otd: "94%", certified: true, status: "received" },
+          { vendor: "Lincoln Electric", price: "₹91,000", delivery: "May 11", otd: "89%", certified: true, status: "received" },
+        ],
+        poData: {
+          poNumber: "PO-2026-0887",
+          date: "May 6, 2026",
+          terms: "Net 30",
+          vendorName: "ESAB India Ltd.",
+          vendorAddress: "13, SIPCOT Industrial Park, Chennai 602 105",
+          vendorGST: "33AAACE1234F1ZD",
+          deliverTo: "Fabrication Bay, Plant 1, Pune 411 019",
+          requiredBy: "May 10, 2026",
+          lineItems: [
+            { description: "ESAB ER70S-6 MIG wire 0.8mm 15kg spool", quantity: "14", unit: "nos", unitPrice: "₹5,880/spool", amount: "₹82,320" },
+          ],
+          subtotal: "₹82,320",
+          gst: "₹14,817",
+          total: "₹97,137",
+        } },
+      { id: `${id}-7`, kind: "agent", label: "PO Delivered to Supplier",
+        status: "locked", narrativeKey: "demo-po",
+        agentSummary: "PO-2026-0887 released · ESAB India acknowledged · delivery May 9" },
+    ],
+  },
+
+  // ── Scenario 3: Gearbox replacement (Outlook — plant failure) ───────────────
+  {
+    source: "outlook",
+    from: "vivek.sharma@plant3ops.in",
+    subject: "Gearbox failure: Conveyor 7 offline — need 5.5kW replacement",
+    confidence: 88,
+    makeSteps: (id) => [
+      { id: `${id}-0`, kind: "agent", label: "Signal Captured",
+        status: "locked", narrativeKey: "demo-capture",
+        agentSummary: "Outlook email · vivek.sharma@plant3ops.in · critical equipment failure · priority intake" },
+      { id: `${id}-1`, kind: "agent", label: "Parsed & Enriched",
+        status: "locked", narrativeKey: "demo-parse",
+        agentSummary: "Helical gearbox 5.5kW i=40:1 B3 IEC 132 · qty 2 (1+spare) · est. ₹1.89L · Plant 3" },
+      { id: `${id}-2`, kind: "agent", label: "Suppliers Shortlisted",
+        status: "locked", narrativeKey: "demo-shortlist",
+        agentSummary: "3 OEM-grade vendors · Elecon Engineering, Bonfiglioli India, SEW India" },
+      { id: `${id}-3`, kind: "human-gate", label: "Review & Send RFQ",
+        status: "locked",
+        humanTitle: "Agent-drafted RFQ ready — gearbox replacement (critical)",
+        humanSubtitle: "RFQ-2026-0428 · quote deadline May 9 · est. ₹1.89L · Conveyor 7 offline",
+        humanCTA: "Send RFQ to 3 suppliers",
+        humanAltCTAs: ["Edit fields"],
+        humanDoneText: "RFQ-2026-0428 sent · 3 gearbox suppliers notified · critical flag set",
+        rfqFields: [
+          { label: "Item",        value: "Helical gearbox 5.5kW i=40:1 B3 IEC 132 flange", confidence: 90 },
+          { label: "Quantity",    value: "2 units (1 replacement + 1 spare)",                confidence: 96 },
+          { label: "Required by", value: "May 15, 2026",                                     confidence: 88, flag: true },
+          { label: "Deliver to",  value: "Plant 3, Nashik Road, Nashik 422 010",             confidence: 100 },
+          { label: "Budget",      value: "₹2.1L est. · ₹5.6L remaining",                    confidence: 100 },
+          { label: "Suppliers",   value: "Elecon Engineering · Bonfiglioli · SEW India",     confidence: 95 },
+        ] },
+      { id: `${id}-4`, kind: "agent", label: "Monitor for Quotes",
+        status: "locked", narrativeKey: "demo-monitor",
+        agentSummary: "RFQ-2026-0428 dispatched · critical flag · 3 gearbox suppliers" },
+      { id: `${id}-5`, kind: "agent", label: "Compare Bids",
+        status: "locked", narrativeKey: "demo-compare",
+        agentSummary: "Elecon Engineering recommended · ₹1.89L · fastest delivery · India-made stock" },
+      { id: `${id}-6`, kind: "human-gate", label: "Review & Approve PO",
+        status: "locked",
+        humanTitle: "Review Purchase Order — Elecon Engineering",
+        humanSubtitle: "Elecon Engineering · ₹1.89L · 91% OTD · delivery May 14 · 10% below budget",
+        humanCTA: "Send PO to Vendor",
+        humanAltCTAs: ["Review all bids", "Request revision"],
+        humanDoneText: "PO-2026-0888 sent to Elecon Engineering · delivery confirmed May 14",
+        bidTable: [
+          { vendor: "Elecon Engineering", price: "₹1.89L", delivery: "May 14", otd: "91%", certified: true, status: "received", recommended: true },
+          { vendor: "Bonfiglioli India",  price: "₹1.97L", delivery: "May 16", otd: "88%", certified: true, status: "received" },
+          { vendor: "SEW India",          price: "₹2.08L", delivery: "May 17", otd: "92%", certified: true, status: "received" },
+        ],
+        poData: {
+          poNumber: "PO-2026-0888",
+          date: "May 6, 2026",
+          terms: "Net 30",
+          vendorName: "Elecon Engineering Co. Ltd.",
+          vendorAddress: "Anand-Sojitra Road, Anand, Gujarat 388 001",
+          vendorGST: "24AAACE5678G1ZE",
+          deliverTo: "Plant 3, Nashik Road, Nashik 422 010",
+          requiredBy: "May 15, 2026",
+          lineItems: [
+            { description: "Helical gearbox 5.5kW i=40:1 B3 IEC 132 flange", quantity: "2", unit: "nos", unitPrice: "₹94,500/unit", amount: "₹1,89,000" },
+          ],
+          subtotal: "₹1,89,000",
+          gst: "₹34,020",
+          total: "₹2,23,020",
+        } },
+      { id: `${id}-7`, kind: "agent", label: "PO Delivered to Supplier",
+        status: "locked", narrativeKey: "demo-po",
+        agentSummary: "PO-2026-0888 released · Elecon Engineering acknowledged · delivery May 14" },
+    ],
+  },
+
+  // ── Scenario 4: LED flood lights (Drive PDF) ───────────────────────────────
+  {
+    source: "drive",
+    from: "Drive · /capital-procurement/2026-Q2",
+    subject: "LED-shopfloor-upgrade-Q2.pdf · 48 × 200W flood lights",
+    confidence: 91,
+    makeSteps: (id) => [
+      { id: `${id}-0`, kind: "agent", label: "PDF Detected in Drive",
+        status: "locked", narrativeKey: "demo-capture",
+        agentSummary: "LED-shopfloor-upgrade-Q2.pdf · /capital-procurement/2026-Q2 · Arun (Engineering)" },
+      { id: `${id}-1`, kind: "agent", label: "Spec Extracted",
+        status: "locked", narrativeKey: "demo-parse",
+        agentSummary: "LED flood light 200W IP65 5000K 110 lm/W · 48 units · est. ₹3.24L · PLT2-CAP-FY26" },
+      { id: `${id}-2`, kind: "agent", label: "Suppliers Shortlisted",
+        status: "locked", narrativeKey: "demo-shortlist",
+        agentSummary: "3 IS 16102-compliant LED suppliers · Havells, Crompton Greaves, Bajaj Electricals" },
+      { id: `${id}-3`, kind: "human-gate", label: "Review & Send RFQ",
+        status: "locked",
+        humanTitle: "Agent-drafted RFQ ready — shopfloor LED upgrade",
+        humanSubtitle: "RFQ-2026-0429 · quote deadline May 10 · est. ₹3.24L within capital budget",
+        humanCTA: "Send RFQ to 3 suppliers",
+        humanAltCTAs: ["Edit fields"],
+        humanDoneText: "RFQ-2026-0429 sent · 3 LED suppliers notified",
+        rfqFields: [
+          { label: "Item",        value: "LED flood light 200W IP65 5000K 110 lm/W IS 16102", confidence: 93 },
+          { label: "Quantity",    value: "48 units",                                             confidence: 99 },
+          { label: "Required by", value: "May 20, 2026",                                         confidence: 97 },
+          { label: "Deliver to",  value: "Electrical Store, Plant 2, Pune 411 026",              confidence: 100 },
+          { label: "Budget",      value: "₹3.6L est. · ₹12.1L cap budget remaining",            confidence: 100 },
+          { label: "Suppliers",   value: "Havells India · Crompton Greaves · Bajaj Electricals", confidence: 96 },
+        ] },
+      { id: `${id}-4`, kind: "agent", label: "Monitor for Quotes",
+        status: "locked", narrativeKey: "demo-monitor",
+        agentSummary: "RFQ-2026-0429 dispatched · monitoring 3 LED supplier inboxes" },
+      { id: `${id}-5`, kind: "agent", label: "Compare Bids",
+        status: "locked", narrativeKey: "demo-compare",
+        agentSummary: "Havells India recommended · ₹3.24L · highest lumen output · 5-year warranty" },
+      { id: `${id}-6`, kind: "human-gate", label: "Review & Approve PO",
+        status: "locked",
+        humanTitle: "Review Purchase Order — Havells India",
+        humanSubtitle: "Havells India · ₹3.24L · 96% OTD · 5-year warranty · delivery May 14 · 10% below budget",
+        humanCTA: "Send PO to Vendor",
+        humanAltCTAs: ["Review all bids", "Request revision"],
+        humanDoneText: "PO-2026-0889 sent to Havells India · delivery confirmed May 14",
+        bidTable: [
+          { vendor: "Havells India",      price: "₹3.24L", delivery: "May 14", otd: "96%", certified: true, status: "received", recommended: true },
+          { vendor: "Crompton Greaves",   price: "₹3.41L", delivery: "May 16", otd: "93%", certified: true, status: "received" },
+          { vendor: "Bajaj Electricals",  price: "₹3.55L", delivery: "May 18", otd: "91%", certified: true, status: "received" },
+        ],
+        poData: {
+          poNumber: "PO-2026-0889",
+          date: "May 6, 2026",
+          terms: "Net 30",
+          vendorName: "Havells India Ltd.",
+          vendorAddress: "1, Raj Narain Marg, Civil Lines, Delhi 110 092",
+          vendorGST: "07AAACH1234P1ZH",
+          deliverTo: "Electrical Store, Plant 2, Pune 411 026",
+          requiredBy: "May 20, 2026",
+          lineItems: [
+            { description: "LED Flood Light 200W IP65 5000K 110 lm/W IS 16102", quantity: "48", unit: "nos", unitPrice: "₹6,750/unit", amount: "₹3,24,000" },
+          ],
+          subtotal: "₹3,24,000",
+          gst: "₹58,320",
+          total: "₹3,82,320",
+        } },
+      { id: `${id}-7`, kind: "agent", label: "PO Delivered to Supplier",
+        status: "locked", narrativeKey: "demo-po",
+        agentSummary: "PO-2026-0889 released · Havells India acknowledged · delivery May 14" },
+    ],
+  },
+];
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function IntakeShell() {
+  const [signals, setSignals] = useState<Signal[]>(STATIC_SIGNALS);
   const [selectedId, setSelectedId] = useState<string>("s1");
   const [pipelines, setPipelines] = useState<Record<string, PipelineStep[]>>(
-    () => JSON.parse(JSON.stringify(PIPELINE_DEFS)),
+    () => JSON.parse(JSON.stringify(STATIC_PIPELINE_DEFS)),
   );
   const [demoSignalId, setDemoSignalId] = useState<string | null>(null);
 
-  const selected = SIGNALS.find((s) => s.id === selectedId)!;
+  // All pipeline definitions — static + dynamic demo ones.
+  // advanceToStep reads from this ref to avoid stale closures.
+  const pipelineDefsRef = useRef<Record<string, PipelineStep[]>>({ ...STATIC_PIPELINE_DEFS });
+
+  // Tracks last-used scenario index so we rotate rather than repeat.
+  const lastScenarioRef = useRef<number>(-1);
+
+  // Signal list container — scrolled to top when a new demo signal is added.
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Demo cancellation token.
+  const demoRef = useRef<{ signalId: string; canceled: boolean } | null>(null);
+
+  const selected = signals.find((s) => s.id === selectedId) ?? signals[0];
   const selectedSteps = pipelines[selectedId] ?? [];
 
   // ── Demo runner ────────────────────────────────────────────────────────────
 
-  // Keep a ref for the active demo so we can cancel on re-trigger
-  const demoRef = useRef<{ signalId: string; canceled: boolean } | null>(null);
+  const advanceToStep = useCallback((signalId: string, stepIdx: number) => {
+    if (demoRef.current?.signalId !== signalId || demoRef.current.canceled) return;
 
-  const advanceToStep = useCallback(
-    (signalId: string, stepIdx: number) => {
+    const stepDef = pipelineDefsRef.current[signalId]?.[stepIdx];
+    if (!stepDef) {
+      setDemoSignalId(null);
+      return;
+    }
+
+    const nextStatus = stepDef.kind === "human-gate" ? "awaiting-human" : "running";
+
+    setPipelines((prev) => ({
+      ...prev,
+      [signalId]: prev[signalId].map((s, i) =>
+        i === stepIdx ? { ...s, status: nextStatus } : s,
+      ),
+    }));
+
+    if (stepDef.kind === "human-gate") {
+      setDemoSignalId(null); // pause — wait for human action
+      return;
+    }
+
+    setTimeout(() => {
       if (demoRef.current?.signalId !== signalId || demoRef.current.canceled) return;
-
-      const stepDef = PIPELINE_DEFS[signalId]?.[stepIdx];
-      if (!stepDef) {
-        setDemoSignalId(null);
-        return;
-      }
-
-      const nextStatus = stepDef.kind === "human-gate" ? "awaiting-human" : "running";
-
       setPipelines((prev) => ({
         ...prev,
         [signalId]: prev[signalId].map((s, i) =>
-          i === stepIdx ? { ...s, status: nextStatus } : s,
+          i === stepIdx ? { ...s, status: "done" } : s,
         ),
       }));
+      setTimeout(() => advanceToStep(signalId, stepIdx + 1), 400);
+    }, 2800);
+  }, []);
 
-      if (stepDef.kind === "human-gate") {
-        // Stop the demo — wait for human action
-        setDemoSignalId(null);
-        return;
-      }
-
-      // Auto-advance after 2.8 s (lets Haiku finish streaming)
-      setTimeout(() => {
-        if (demoRef.current?.signalId !== signalId || demoRef.current.canceled) return;
-        setPipelines((prev) => ({
-          ...prev,
-          [signalId]: prev[signalId].map((s, i) =>
-            i === stepIdx ? { ...s, status: "done" } : s,
-          ),
-        }));
-        setTimeout(() => advanceToStep(signalId, stepIdx + 1), 400);
-      }, 2800);
-    },
-    [],
-  );
-
+  /** Creates a new signal + pipeline, prepends it to the left panel, and starts animation. */
   const runDemo = useCallback(() => {
-    const signalId = selectedId;
+    // Rotate through scenarios — avoid repeating the previous one
+    let nextIdx = lastScenarioRef.current;
+    if (DEMO_SCENARIOS.length > 1) {
+      while (nextIdx === lastScenarioRef.current) {
+        nextIdx = Math.floor(Math.random() * DEMO_SCENARIOS.length);
+      }
+    } else {
+      nextIdx = 0;
+    }
+    lastScenarioRef.current = nextIdx;
+    const scenario = DEMO_SCENARIOS[nextIdx];
+
+    const newId = `demo-${Date.now()}`;
+
+    const newSignal: Signal = {
+      id: newId,
+      source: scenario.source,
+      from: scenario.from,
+      subject: scenario.subject,
+      when: "just now",
+      confidence: scenario.confidence,
+    };
+
+    // makeSteps returns steps with their default statuses — we lock all for demo start
+    const newSteps = scenario.makeSteps(newId);
+    const lockedSteps = newSteps.map((s) => ({ ...s, status: "locked" as const }));
+
+    // Store full defs in ref so advanceToStep can read without stale closure
+    pipelineDefsRef.current[newId] = newSteps;
 
     // Cancel any running demo
     if (demoRef.current) demoRef.current.canceled = true;
-    demoRef.current = { signalId, canceled: false };
+    demoRef.current = { signalId: newId, canceled: false };
 
-    // Reset pipeline to all-locked
-    setPipelines((prev) => ({
-      ...prev,
-      [signalId]: PIPELINE_DEFS[signalId].map((s) => ({ ...s, status: "locked" })),
-    }));
-    setDemoSignalId(signalId);
+    // Prepend signal, add pipeline, auto-select
+    setSignals((prev) => [newSignal, ...prev]);
+    setPipelines((prev) => ({ ...prev, [newId]: lockedSteps }));
+    setSelectedId(newId);
+    setDemoSignalId(newId);
 
-    // Start from step 0 after a short breath
-    setTimeout(() => advanceToStep(signalId, 0), 600);
-  }, [selectedId, advanceToStep]);
+    // Scroll signal list to top to reveal the new card
+    setTimeout(() => listRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 50);
+    // Start animation after a short breath
+    setTimeout(() => advanceToStep(newId, 0), 600);
+  }, [advanceToStep]);
 
   // ── Human gate action ──────────────────────────────────────────────────────
 
   const handleStepAction = useCallback(
     (stepId: string, which: "primary" | "alt1" | "alt2") => {
-      // Alt actions (e.g. "Review all bids", "Add suppliers") are handled
-      // locally inside PipelineView/HumanGateCard — they don't advance the pipeline.
+      // Alt actions are handled locally inside PipelineView/HumanGateCard
       if (which !== "primary") return;
 
       const signalId = selectedId;
       const stepIdx = pipelines[signalId].findIndex((s) => s.id === stepId);
       if (stepIdx === -1) return;
 
-      // Mark gate as done
+      // Mark gate as human-done
       setPipelines((prev) => ({
         ...prev,
         [signalId]: prev[signalId].map((s, i) =>
@@ -348,7 +789,8 @@ export function IntakeShell() {
       }));
 
       // Continue pipeline automatically after human action
-      if (stepIdx < PIPELINE_DEFS[signalId].length - 1) {
+      const totalSteps = pipelineDefsRef.current[signalId]?.length ?? 0;
+      if (stepIdx < totalSteps - 1) {
         if (demoRef.current) demoRef.current.canceled = true;
         demoRef.current = { signalId, canceled: false };
         setDemoSignalId(signalId);
@@ -394,8 +836,8 @@ export function IntakeShell() {
           </div>
 
           {/* Scrollable signal list */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {SIGNALS.map((s) => (
+          <div ref={listRef} style={{ flex: 1, overflowY: "auto" }}>
+            {signals.map((s) => (
               <SignalCard
                 key={s.id}
                 signal={s}

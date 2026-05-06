@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import type { PipelineStep, Signal, BidRow } from "@/types/intake";
+import type { PipelineStep, Signal, BidRow, POData } from "@/types/intake";
 import { AgentNarrative } from "./agent-narrative";
 import { ConnectorIcon } from "./connector-icon";
 import { Pill } from "@/components/pill";
@@ -235,10 +235,11 @@ function HumanGateCard({
   step: PipelineStep;
   onAction: (which: "primary" | "alt1" | "alt2") => void;
 }) {
-  // Alt1 actions (e.g. "Review all bids") expand detail inline — don't advance pipeline
   const [showBidTable, setShowBidTable] = useState(false);
+  const hasPO = !!step.poData;
   const hasBidTable = !!step.bidTable?.length;
-  const hasDetail = !!(step.rfqFields?.length || hasBidTable);
+  const hasRfqFields = !!step.rfqFields?.length;
+  const hasAnyDetail = hasRfqFields || hasBidTable || hasPO;
 
   return (
     <div style={{
@@ -252,15 +253,10 @@ function HumanGateCard({
       {(step.humanTitle || step.humanSubtitle) && (
         <div style={{
           padding: "12px 14px",
-          borderBottom: hasDetail ? "1px solid var(--warn-border)" : "none",
+          borderBottom: hasAnyDetail ? "1px solid var(--warn-border)" : "none",
         }}>
           {step.humanTitle && (
-            <div style={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: "var(--text-primary)",
-              marginBottom: step.humanSubtitle ? 4 : 0,
-            }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)", marginBottom: step.humanSubtitle ? 4 : 0 }}>
               {step.humanTitle}
             </div>
           )}
@@ -272,20 +268,17 @@ function HumanGateCard({
         </div>
       )}
 
-      {/* RFQ field mini-table */}
-      {step.rfqFields && step.rfqFields.length > 0 && (
+      {/* RFQ field mini-table (for non-PO gates) */}
+      {hasRfqFields && (
         <div style={{ borderBottom: "1px solid var(--warn-border)" }}>
-          {step.rfqFields.map((f, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                padding: "7px 14px",
-                borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
-                background: f.flag ? "rgba(180,83,9,0.04)" : "transparent",
-              }}
-            >
+          {step.rfqFields!.map((f, i) => (
+            <div key={i} style={{
+              display: "flex",
+              alignItems: "baseline",
+              padding: "7px 14px",
+              borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
+              background: f.flag ? "rgba(180,83,9,0.04)" : "transparent",
+            }}>
               <span style={{ fontSize: 11.5, color: "var(--text-tertiary)", width: 110, flexShrink: 0, lineHeight: 1.5 }}>
                 {f.label}
               </span>
@@ -301,11 +294,7 @@ function HumanGateCard({
               {f.confidence !== undefined && (
                 <span style={{
                   fontSize: 11.5,
-                  color: f.confidence === 0
-                    ? "var(--danger)"
-                    : f.confidence < 90
-                    ? "var(--warn)"
-                    : "var(--text-tertiary)",
+                  color: f.confidence === 0 ? "var(--danger)" : f.confidence < 90 ? "var(--warn)" : "var(--text-tertiary)",
                   fontWeight: 500,
                   flexShrink: 0,
                   marginLeft: 8,
@@ -318,13 +307,50 @@ function HumanGateCard({
         </div>
       )}
 
-      {/* Bid comparison table (toggled by "Review all bids") */}
-      {hasBidTable && showBidTable && (
+      {/* PO gate: bid table (toggled) + PO card */}
+      {hasPO && (
+        <div>
+          {/* Bid toggle row */}
+          {hasBidTable && (
+            <div style={{ borderBottom: showBidTable ? "none" : "1px solid var(--warn-border)" }}>
+              <button
+                onClick={() => setShowBidTable((v) => !v)}
+                style={{
+                  width: "100%",
+                  padding: "9px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "rgba(180,83,9,0.03)",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  fontWeight: 500,
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ fontSize: 11, color: "var(--warn)" }}>{showBidTable ? "▾" : "▸"}</span>
+                {showBidTable ? "Hide bid comparison" : "View bid comparison (3 quotes received)"}
+              </button>
+              {showBidTable && <BidComparisonTable bids={step.bidTable!} />}
+            </div>
+          )}
+
+          {/* PO document */}
+          <div style={{ padding: "14px", borderBottom: "1px solid var(--warn-border)" }}>
+            <POCard po={step.poData!} />
+          </div>
+        </div>
+      )}
+
+      {/* Non-PO gate: bid table toggle (existing behaviour) */}
+      {!hasPO && hasBidTable && showBidTable && (
         <BidComparisonTable bids={step.bidTable!} />
       )}
 
       {/* Action buttons */}
-      <div style={{ padding: "12px 14px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ padding: "12px 14px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {step.humanCTA && (
           <Btn kind="dark" size="md" onClick={() => onAction("primary")}>
             {step.humanCTA}
@@ -335,14 +361,16 @@ function HumanGateCard({
             kind="secondary"
             size="md"
             onClick={() => {
-              if (hasBidTable) {
+              if (!hasPO && hasBidTable) {
                 setShowBidTable((v) => !v);
               } else {
                 onAction("alt1");
               }
             }}
           >
-            {hasBidTable ? (showBidTable ? "Hide bids" : step.humanAltCTAs[0]) : step.humanAltCTAs[0]}
+            {!hasPO && hasBidTable
+              ? showBidTable ? "Hide bids" : step.humanAltCTAs[0]
+              : step.humanAltCTAs[0]}
           </Btn>
         )}
         {step.humanAltCTAs?.[1] && (
@@ -350,6 +378,152 @@ function HumanGateCard({
             {step.humanAltCTAs[1]}
           </Btn>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Purchase Order card ───────────────────────────────────────────────────────
+
+function POCard({ po }: { po: POData }) {
+  return (
+    <div style={{
+      background: "white",
+      border: "1.5px solid var(--border-default)",
+      borderRadius: 8,
+      overflow: "hidden",
+      fontSize: 12.5,
+    }}>
+      {/* PO header */}
+      <div style={{
+        padding: "12px 16px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        borderBottom: "1px solid var(--border-subtle)",
+        background: "var(--bg-subtle)",
+      }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-primary)", textTransform: "uppercase" }}>
+            Purchase Order
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 3 }}>
+            Date: {po.date} · Terms: {po.terms}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)", fontFamily: "monospace", letterSpacing: "0.02em" }}>
+            {po.poNumber}
+          </div>
+          <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 2 }}>
+            Auto-generated · ProcureAI
+          </div>
+        </div>
+      </div>
+
+      {/* Addresses row */}
+      <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)" }}>
+        {/* Vendor */}
+        <div style={{ flex: 1, padding: "10px 16px", borderRight: "1px solid var(--border-subtle)" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-tertiary)", marginBottom: 5 }}>
+            Vendor
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{po.vendorName}</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>{po.vendorAddress}</div>
+          {po.vendorGST && (
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+              GSTIN: <span style={{ fontFamily: "monospace", letterSpacing: "0.02em" }}>{po.vendorGST}</span>
+            </div>
+          )}
+        </div>
+        {/* Delivery */}
+        <div style={{ flex: 1, padding: "10px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-tertiary)", marginBottom: 5 }}>
+            Deliver to
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 6 }}>{po.deliverTo}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-tertiary)", marginBottom: 3 }}>
+            Required by
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--warn-dark, #92400e)" }}>{po.requiredBy}</div>
+        </div>
+      </div>
+
+      {/* Line items table */}
+      <div>
+        {/* Header */}
+        <div style={{
+          display: "flex",
+          padding: "6px 16px",
+          background: "var(--bg-subtle)",
+          borderBottom: "1px solid var(--border-subtle)",
+        }}>
+          {(["Item / Description", "Qty", "Unit Price", "Amount"] as const).map((h, i) => (
+            <span key={h} style={{
+              flex: i === 0 ? 3 : 1,
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              color: "var(--text-tertiary)",
+              textAlign: i === 0 ? "left" : "right",
+            }}>
+              {h}
+            </span>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {po.lineItems.map((item, i) => (
+          <div key={i} style={{
+            display: "flex",
+            alignItems: "baseline",
+            padding: "10px 16px",
+            borderBottom: "1px solid var(--border-subtle)",
+          }}>
+            <div style={{ flex: 3, fontSize: 12.5, color: "var(--text-primary)", lineHeight: 1.4 }}>
+              {item.description}
+            </div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 12.5, color: "var(--text-secondary)" }}>
+              {item.quantity} {item.unit}
+            </div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 12.5, color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+              {item.unitPrice}
+            </div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>
+              {item.amount}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Totals */}
+      <div style={{ padding: "10px 16px", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
+        {po.subtotal && po.gst && (
+          <div style={{ display: "flex", gap: 24, fontSize: 12, color: "var(--text-secondary)" }}>
+            <span>Sub-total</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 90, textAlign: "right" }}>{po.subtotal}</span>
+          </div>
+        )}
+        {po.gst && (
+          <div style={{ display: "flex", gap: 24, fontSize: 12, color: "var(--text-secondary)" }}>
+            <span>GST (18%)</span>
+            <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 90, textAlign: "right" }}>{po.gst}</span>
+          </div>
+        )}
+        <div style={{
+          display: "flex",
+          gap: 24,
+          fontSize: 14,
+          fontWeight: 700,
+          color: "var(--text-primary)",
+          paddingTop: 6,
+          borderTop: "1.5px solid var(--border-default)",
+          marginTop: 2,
+        }}>
+          <span style={{ textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 11 }}>Total</span>
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 90, textAlign: "right" }}>{po.total}</span>
+        </div>
       </div>
     </div>
   );

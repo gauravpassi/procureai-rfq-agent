@@ -27,6 +27,31 @@ export interface RfqField {
   flag?: boolean; // true = amber highlight (low confidence / needs attention)
 }
 
+/** One line item in a Purchase Order */
+export interface POLineItem {
+  description: string;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
+  amount: string;
+}
+
+/** Formatted Purchase Order shown in the final approve gate */
+export interface POData {
+  poNumber: string;
+  date: string;
+  terms: string;
+  vendorName: string;
+  vendorAddress: string;
+  vendorGST?: string;
+  deliverTo: string;
+  requiredBy: string;
+  lineItems: POLineItem[];
+  subtotal: string;
+  gst?: string;
+  total: string;
+}
+
 /** One step in the procurement pipeline */
 export interface PipelineStep {
   id: string;
@@ -48,6 +73,7 @@ export interface PipelineStep {
   humanDoneText?: string;      // Text shown in collapsed state after gate passed
   rfqFields?: RfqField[];      // Mini field table inside the gate card
   bidTable?: BidRow[];         // Vendor comparison table (for approve-supplier gate)
+  poData?: POData;             // Formatted PO shown in final approve gate
 }
 
 /** The procurement signal (email / PR / Slack msg / etc.) */
