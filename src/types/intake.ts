@@ -8,6 +8,17 @@ export type PipelineStepStatus =
   | "awaiting-human"  // Human gate — waiting for buyer action
   | "human-done";     // Human gate completed
 
+/** One vendor row in a bid comparison table */
+export interface BidRow {
+  vendor: string;
+  price: string;
+  delivery: string;
+  otd: string;
+  certified: boolean;
+  status: "received" | "no-response";
+  recommended?: boolean;
+}
+
 /** A mini key-value row shown inside a human gate panel */
 export interface RfqField {
   label: string;
@@ -36,6 +47,7 @@ export interface PipelineStep {
   humanAltCTAs?: string[];     // Up to 2 secondary / ghost actions
   humanDoneText?: string;      // Text shown in collapsed state after gate passed
   rfqFields?: RfqField[];      // Mini field table inside the gate card
+  bidTable?: BidRow[];         // Vendor comparison table (for approve-supplier gate)
 }
 
 /** The procurement signal (email / PR / Slack msg / etc.) */

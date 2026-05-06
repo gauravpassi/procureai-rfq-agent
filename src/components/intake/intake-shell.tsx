@@ -77,7 +77,13 @@ const PIPELINE_DEFS: Record<string, PipelineStep[]> = {
       humanSubtitle: "Agent recommendation: Bharat Steel · ₹2.9L · IS 6392 certified · 91% OTD",
       humanCTA: "Approve Bharat Steel & Generate PO",
       humanAltCTAs: ["Review all bids"],
-      humanDoneText: "Bharat Steel approved · PO-2026-0884 generated" },
+      humanDoneText: "Bharat Steel approved · PO-2026-0884 generated",
+      bidTable: [
+        { vendor: "Bharat Steel",     price: "₹2.9L",  delivery: "May 13", otd: "91%", certified: true,  status: "received", recommended: true },
+        { vendor: "Hindalco Forgings", price: "₹3.2L",  delivery: "May 15", otd: "96%", certified: true,  status: "received" },
+        { vendor: "Steelmark",        price: "₹3.35L", delivery: "May 16", otd: "89%", certified: true,  status: "received" },
+        { vendor: "MTI Forge",        price: "—",       delivery: "—",      otd: "87%", certified: true,  status: "no-response" },
+      ] },
     { id: "s1-7", kind: "agent", label: "Release PO to Supplier",
       status: "locked", narrativeKey: "s1-po",
       agentSummary: "PO released · Bharat Steel acknowledged · delivery May 13" },
@@ -325,6 +331,10 @@ export function IntakeShell() {
 
   const handleStepAction = useCallback(
     (stepId: string, which: "primary" | "alt1" | "alt2") => {
+      // Alt actions (e.g. "Review all bids", "Add suppliers") are handled
+      // locally inside PipelineView/HumanGateCard — they don't advance the pipeline.
+      if (which !== "primary") return;
+
       const signalId = selectedId;
       const stepIdx = pipelines[signalId].findIndex((s) => s.id === stepId);
       if (stepIdx === -1) return;

@@ -15,7 +15,8 @@
  * through all agent steps, pausing at human gates.
  */
 
-import type { PipelineStep, Signal } from "@/types/intake";
+import { useState } from "react";
+import type { PipelineStep, Signal, BidRow } from "@/types/intake";
 import { AgentNarrative } from "./agent-narrative";
 import { ConnectorIcon } from "./connector-icon";
 import { Pill } from "@/components/pill";
@@ -234,6 +235,11 @@ function HumanGateCard({
   step: PipelineStep;
   onAction: (which: "primary" | "alt1" | "alt2") => void;
 }) {
+  // Alt1 actions (e.g. "Review all bids") expand detail inline — don't advance pipeline
+  const [showBidTable, setShowBidTable] = useState(false);
+  const hasBidTable = !!step.bidTable?.length;
+  const hasDetail = !!(step.rfqFields?.length || hasBidTable);
+
   return (
     <div style={{
       marginTop: 10,
@@ -246,7 +252,7 @@ function HumanGateCard({
       {(step.humanTitle || step.humanSubtitle) && (
         <div style={{
           padding: "12px 14px",
-          borderBottom: step.rfqFields?.length ? "1px solid var(--warn-border)" : "none",
+          borderBottom: hasDetail ? "1px solid var(--warn-border)" : "none",
         }}>
           {step.humanTitle && (
             <div style={{
@@ -312,6 +318,11 @@ function HumanGateCard({
         </div>
       )}
 
+      {/* Bid comparison table (toggled by "Review all bids") */}
+      {hasBidTable && showBidTable && (
+        <BidComparisonTable bids={step.bidTable!} />
+      )}
+
       {/* Action buttons */}
       <div style={{ padding: "12px 14px", display: "flex", gap: 8, flexWrap: "wrap" }}>
         {step.humanCTA && (
@@ -320,8 +331,18 @@ function HumanGateCard({
           </Btn>
         )}
         {step.humanAltCTAs?.[0] && (
-          <Btn kind="secondary" size="md" onClick={() => onAction("alt1")}>
-            {step.humanAltCTAs[0]}
+          <Btn
+            kind="secondary"
+            size="md"
+            onClick={() => {
+              if (hasBidTable) {
+                setShowBidTable((v) => !v);
+              } else {
+                onAction("alt1");
+              }
+            }}
+          >
+            {hasBidTable ? (showBidTable ? "Hide bids" : step.humanAltCTAs[0]) : step.humanAltCTAs[0]}
           </Btn>
         )}
         {step.humanAltCTAs?.[1] && (
@@ -330,6 +351,119 @@ function HumanGateCard({
           </Btn>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Bid comparison table ────────────────────────────────────────────────────
+
+function BidComparisonTable({ bids }: { bids: BidRow[] }) {
+  const colStyle = (flex: number, align?: string): React.CSSProperties => ({
+    flex,
+    fontSize: 12.5,
+    textAlign: (align as React.CSSProperties["textAlign"]) ?? "left",
+    padding: "0 8px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  });
+
+  return (
+    <div style={{ borderTop: "1px solid var(--warn-border)", borderBottom: "1px solid var(--warn-border)" }}>
+      {/* Header */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        padding: "7px 14px",
+        background: "rgba(180,83,9,0.06)",
+        borderBottom: "1px solid var(--warn-border)",
+      }}>
+        <span style={{ ...colStyle(3), fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Vendor</span>
+        <span style={{ ...colStyle(2), fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Price</span>
+        <span style={{ ...colStyle(2), fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Delivery</span>
+        <span style={{ ...colStyle(1.5), fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>OTD</span>
+        <span style={{ ...colStyle(1.5), fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center" }}>Cert</span>
+      </div>
+
+      {/* Rows */}
+      {bids.map((bid, i) => {
+        const isNoResponse = bid.status === "no-response";
+        const rowBg = bid.recommended ? "rgba(21,128,61,0.05)" : "transparent";
+
+        return (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              padding: "9px 14px",
+              borderTop: i === 0 ? "none" : "1px solid var(--border-subtle)",
+              background: rowBg,
+              opacity: isNoResponse ? 0.5 : 1,
+            }}
+          >
+            {/* Vendor */}
+            <div style={{ flex: 3, display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+              {bid.recommended && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "var(--success)",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success-border)",
+                  borderRadius: 4,
+                  padding: "1px 5px",
+                  flexShrink: 0,
+                }}>
+                  ★ REC
+                </span>
+              )}
+              <span style={{
+                fontSize: 13,
+                fontWeight: bid.recommended ? 600 : 400,
+                color: bid.recommended ? "var(--success)" : isNoResponse ? "var(--text-disabled)" : "var(--text-primary)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}>
+                {bid.vendor}
+              </span>
+            </div>
+
+            {/* Price */}
+            <div style={{ flex: 2, textAlign: "right", paddingRight: 8 }}>
+              <span style={{
+                fontSize: 13,
+                fontWeight: bid.recommended ? 600 : 400,
+                color: isNoResponse ? "var(--text-disabled)" : bid.recommended ? "var(--success)" : "var(--text-primary)",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {bid.price}
+              </span>
+            </div>
+
+            {/* Delivery */}
+            <div style={{ flex: 2, textAlign: "center" }}>
+              <span style={{ fontSize: 12.5, color: isNoResponse ? "var(--text-disabled)" : "var(--text-secondary)" }}>
+                {bid.delivery}
+              </span>
+            </div>
+
+            {/* OTD */}
+            <div style={{ flex: 1.5, textAlign: "center" }}>
+              <span style={{ fontSize: 12.5, color: "var(--text-tertiary)" }}>{bid.otd}</span>
+            </div>
+
+            {/* Cert */}
+            <div style={{ flex: 1.5, textAlign: "center" }}>
+              {bid.certified
+                ? <span style={{ fontSize: 12, color: "var(--success)" }}>✓</span>
+                : <span style={{ fontSize: 12, color: "var(--text-disabled)" }}>—</span>
+              }
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
